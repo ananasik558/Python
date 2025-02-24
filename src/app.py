@@ -36,14 +36,12 @@ async def shutdown_event():
 
 @app.post('/register/', response_model=UsersPublic)
 async def register(user: UsersRegister, session: Session = Depends(get_session)):
-    # Проверка существования пользователя
     query = select(Users).where(Users.email == user.email)
     result = await session.execute(query)
     existing_user = result.scalars().first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Хэширование пароля
     hashed_password = bcrypt.hashpw(user.password.encode(), bcrypt.gensalt())
 
     telegram_id = user.telegram_id
@@ -52,13 +50,11 @@ async def register(user: UsersRegister, session: Session = Depends(get_session))
     user_data["role"] = 'user'
     db_user = Users(**user_data)
 
-    # Валидация данных
     try:
         db_user = Users.model_validate(db_user)
     except Exception as e:
         raise HTTPException(status_code=400, detail="Invalid user data")
 
-    # Отправка приветственного сообщения в Telegram
     send_telegram_message.delay(telegram_id, "Добро пожаловать в приложение!")
 
     session.add(db_user)
@@ -71,9 +67,8 @@ async def register(user: UsersRegister, session: Session = Depends(get_session))
 async def login(
     user_input: OAuth2PasswordRequestForm = Depends(),
     session: Session = Depends(get_session),
-    response: Response = None  # Для установки cookies
+    response: Response = None 
 ):
-    # Поиск пользователя в базе данных
     query = select(Users).where(Users.email == user_input.username)
     result = await session.execute(query)
     user = result.scalars().first()
@@ -84,7 +79,6 @@ async def login(
     if not bcrypt.checkpw(user_input.password.encode(), user.hashed_password.encode()):
         raise HTTPException(status_code=400, detail='Wrong password')
 
-    # Запись времени входа
     new_login_history = models.LoginHistory(user_id=user.id)
     session.add(new_login_history)
     await session.commit()
@@ -92,7 +86,6 @@ async def login(
 
     access_token, refresh_token = create_tokens(user.email, user.role)
 
-    # Установка Refresh Token в httpOnly cookie
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
@@ -109,22 +102,18 @@ async def login(
 
 @app.post('/refresh/')
 async def refresh(
-    refresh_token: str = Cookie(None),  # Получаем Refresh Token из cookies
+    refresh_token: str = Cookie(None), 
     session: Session = Depends(get_session)
 ):
     if not refresh_token:
         raise HTTPException(status_code=401, detail='Refresh token missing')
 
     try:
-        # Декодируем Refresh Token
         payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload['email']
         role = payload['role']
 
-        # Генерация нового Access Token
         access_token, _ = create_tokens(email, role)
-
-        # Возврат нового Access Token
         return {
             "access_token": access_token,
             "token_type": "bearer"
@@ -153,7 +142,7 @@ async def change_role(user_id: int, new_role: str, token: str = Depends(oauth2_s
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.role = new_role  # Предположим, что у модели Users есть поле role
+    user.role = new_role 
     session.add(user)
     await session.commit()
     await session.refresh(user)
